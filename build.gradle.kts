@@ -4,6 +4,7 @@ import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
     id("java") // Java support
+    kotlin("plugin.serialization") version "1.9.10" // 添加此行
     alias(libs.plugins.kotlin) // Kotlin support
     alias(libs.plugins.intelliJPlatform) // IntelliJ Platform Gradle Plugin
     alias(libs.plugins.changelog) // Gradle Changelog Plugin
@@ -33,6 +34,7 @@ repositories {
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
+    implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
     testImplementation(libs.junit)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
@@ -153,6 +155,7 @@ intellijPlatformTesting {
 
             plugins {
                 robotServerPlugin()
+
             }
         }
     }

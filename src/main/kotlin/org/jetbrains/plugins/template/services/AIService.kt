@@ -7,73 +7,77 @@ import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 
 object AIService {
-    private const val API_URL = "https://dashscope.aliyuncs.com/openai/v1/chat/completions"
-    private const val API_KEY = "" // API 密钥
+    private const val API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    private const val API_KEY = "sk-a212e3f3d4ed49ab9ad576692dde557f" // 请使用自己的API Key或从环境变量获取
 
     private val client = OkHttpClient()
+    private val json = Json {
+        ignoreUnknownKeys = true // 启用忽略未知字段
+    }
 
-    // 请求数据模型
     @Serializable
     data class ChatRequest(
-        val model: String = "gpt-3.5-turbo",
+        val model: String,
         val messages: List<Message>,
         val temperature: Double = 0.7
     )
 
     @Serializable
     data class Message(
-        val role: String, // "user" 或 "assistant"
+        val role: String,
         val content: String
     )
 
-    // 响应数据模型
     @Serializable
     data class ChatResponse(
         val choices: List<Choice>
     ) {
         @Serializable
         data class Choice(
-            val message: Message
+            val message: Message,
+            val finish_reason: String? = null,
+            val index: Int? = null,
+            val logprobs: String? = null
         )
     }
 
-    // 调用 AI API
-    fun getAIResponse(conversationHistory: List<Pair<String, String>>, userInput: String): String {
-        // 构造消息历史
-        val messages = conversationHistory.map { (user, ai) ->
-            listOf(
-                Message(role = "user", content = user),
-                Message(role = "assistant", content = ai)
-            )
-        }.flatten() + Message(role = "user", content = userInput)
+    fun getAIResponse(userInput: String, model: String = "qwen-coder-turbo-0919"): String {
+        val messages = listOf(
+            Message(role = "system", content = "You are a helpful assistant."),
+            Message(role = "user", content = userInput)
+        )
 
-        // 构造请求体
-        val requestBody = Json.encodeToString(
-            ChatRequest(messages = messages)
-        ).toRequestBody("application/json".toMediaType())
+        val requestObj = ChatRequest(
+            model = model,
+            messages = messages,
+            temperature = 0.7
+        )
 
-        // 构造请求
+        val requestJson = json.encodeToString(requestObj)
+        println("Request JSON:\n$requestJson")
+
+        val requestBody = requestJson.toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url(API_URL)
             .addHeader("Authorization", "Bearer $API_KEY")
+            .addHeader("Content-Type", "application/json")
             .post(requestBody)
             .build()
 
         return try {
             val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val responseBody = response.body?.string()
-                if (responseBody != null) {
-                    val chatResponse = Json.decodeFromString<ChatResponse>(responseBody)
-                    chatResponse.choices.firstOrNull()?.message?.content ?: "No response"
-                } else {
-                    "No response body"
-                }
+            val responseBody = response.body?.string()
+
+            println("Response Code: ${response.code}")
+            println("Response Body:\n$responseBody")
+
+            if (response.isSuccessful && responseBody != null) {
+                val chatResponse = json.decodeFromString<ChatResponse>(responseBody)
+                chatResponse.choices.firstOrNull()?.message?.content ?: "No response"
             } else {
                 "Error: ${response.code} - ${response.message}"
             }
