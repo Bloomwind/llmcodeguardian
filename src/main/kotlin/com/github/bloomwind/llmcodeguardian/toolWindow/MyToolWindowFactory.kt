@@ -1,4 +1,4 @@
-package org.jetbrains.plugins.template.toolWindow
+package com.github.bloomwind.llmcodeguardian.toolWindow
 
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
@@ -7,7 +7,7 @@ import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
-import org.jetbrains.plugins.template.service.AIService
+import com.github.bloomwind.llmcodeguardian.service.AIService
 import java.awt.BorderLayout
 import javax.swing.JButton
 import javax.swing.JEditorPane
