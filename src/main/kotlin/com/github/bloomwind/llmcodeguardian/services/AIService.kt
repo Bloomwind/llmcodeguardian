@@ -1,4 +1,4 @@
-package org.jetbrains.plugins.template.service
+package com.github.bloomwind.llmcodeguardian.service
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString

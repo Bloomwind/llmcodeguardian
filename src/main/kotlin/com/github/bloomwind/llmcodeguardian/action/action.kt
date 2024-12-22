@@ -1,4 +1,4 @@
-package org.jetbrains.plugins.template.action
+package com.github.bloomwind.llmcodeguardian.action
 
 
 import com.intellij.openapi.actionSystem.AnAction

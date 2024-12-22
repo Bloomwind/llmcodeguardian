@@ -1,24 +1,24 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>org.jetbrains.plugins.template</id>
+    <id>com.github.bloomwind.llmcodeguardian</id>
     <name>LLMCodeGuardian</name>
-    <vendor>JetBrains</vendor>
+    <vendor>bloomwind</vendor>
 
     <depends>com.intellij.modules.platform</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="org.jetbrains.plugins.template.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+        <toolWindow factoryClass="com.github.bloomwind.llmcodeguardian.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
     </extensions>
 
     <applicationListeners>
-        <listener class="org.jetbrains.plugins.template.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+        <listener class="com.github.bloomwind.llmcodeguardian.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
     </applicationListeners>
 
     <actions>
-        <action id="org.jetbrains.plugins.template.action.AskAIAction"
-                class="org.jetbrains.plugins.template.action.AskAIAction"
+        <action id="com.github.bloomwind.llmcodeguardian.action.AskAIAction"
+                class="com.github.bloomwind.llmcodeguardian.action.AskAIAction"
                 text="Ask AI"
                 description="Simulates an AI response">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
