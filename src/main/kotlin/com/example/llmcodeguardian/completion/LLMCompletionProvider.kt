@@ -1,24 +1,36 @@
 package com.example.llmcodeguardian.completion
 
 import com.intellij.codeInsight.completion.*
-import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBList
 import com.intellij.util.ProcessingContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.*
-import javax.swing.SwingUtilities
-import com.intellij.openapi.util.IconLoader
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.awt.Dimension
+import java.awt.Font
+import javax.swing.JPanel
+import javax.swing.BoxLayout
+import javax.swing.JButton
+import javax.swing.ListCellRenderer
+import javax.swing.JLabel
+
 class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
+
     override fun addCompletions(
         parameters: CompletionParameters,
         context: ProcessingContext,
         resultSet: CompletionResultSet
     ) {
         println("LLMCompletionProvider triggered")
+
         val file = parameters.originalFile
         val offset = parameters.offset
         val textBefore = file.text.substring(0, offset).takeLast(500)
@@ -26,32 +38,87 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
         val contextCode = textBefore + "\n<cursor>\n" + textAfter
         println("Generated contextCode: $contextCode")
 
-        // 异步调用 LLM 获取建议
         ApplicationManager.getApplication().executeOnPooledThread {
             val suggestions = callLLMForSuggestions(contextCode)
             println("LLM suggestions returned: $suggestions")
-            SwingUtilities.invokeLater {
+
+            ApplicationManager.getApplication().invokeLater {
                 if (suggestions.isNotEmpty()) {
-                    // 为每个建议添加注释形式的补全提示
-                    for (suggestion in suggestions) {
-                        resultSet.addElement(
-                            LookupElementBuilder.create(suggestion)
-                                .withPresentableText("// Suggestion: $suggestion")  // 显示为注释
-                                .withTypeText("LLM Suggestion")
-                                .bold()
-                        )
-                    }
+                    displayPopup(parameters.editor, suggestions)
                 } else {
                     println("No valid suggestions found.")
                 }
-                resultSet.stopHere() // 确保此处在所有元素添加后调用
             }
         }
     }
 
-    /**
-     * 向远端LLM接口发送上下文并获取建议
-     */
+    private fun displayPopup(editor: Editor, suggestions: List<String>) {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+
+        val list = JBList(suggestions)
+        list.setCellRenderer { _, value, _, _, _ ->
+            val label = JLabel("<html><pre>${value.replace("\n", "<br>")}</pre></html>")
+            label.font = Font(Font.MONOSPACED, Font.PLAIN, 14)
+            label.preferredSize = Dimension(380, label.preferredSize.height)
+            label
+        }
+        list.setEmptyText("No suggestions available")
+
+        val scrollPane = JBScrollPane(list)
+        scrollPane.preferredSize = Dimension(400, 300)
+        panel.add(scrollPane)
+
+        val applyButton = JButton("Apply Selected Suggestion")
+        applyButton.addActionListener {
+            val selectedValue = list.selectedValue
+            if (selectedValue != null) {
+                applySuggestion(editor, selectedValue)
+            }
+        }
+        panel.add(applyButton)
+
+        val popup = JBPopupFactory.getInstance()
+            .createComponentPopupBuilder(panel, list)
+            .setTitle("Code Suggestions")
+            .setResizable(true)
+            .setMovable(true)
+            .createPopup()
+
+        popup.showInBestPositionFor(editor)
+    }
+
+    private fun applySuggestion(editor: Editor, suggestion: String) {
+        val project = editor.project
+        if (project != null) {
+            WriteCommandAction.runWriteCommandAction(project) {
+                val caretOffset = editor.caretModel.offset
+                val documentText = editor.document.text
+
+                val sanitizedSuggestion = sanitizeSuggestion(documentText, caretOffset, suggestion)
+                if (sanitizedSuggestion.isNotBlank()) {
+                    editor.document.insertString(caretOffset, sanitizedSuggestion)
+                    println("Applied suggestion: $sanitizedSuggestion")
+                } else {
+                    println("Suggestion was fully redundant and not applied.")
+                }
+            }
+        } else {
+            println("Project is null, cannot apply suggestion.")
+        }
+    }
+
+    private fun sanitizeSuggestion(currentCode: String, caretOffset: Int, suggestion: String): String {
+        val currentCodeUpToCaret = currentCode.substring(0, caretOffset)
+        val currentLines = currentCodeUpToCaret.lines().map { it.trim() }
+
+        val suggestionLines = suggestion.lines().map { it.trim() }
+
+        val filteredLines = suggestionLines.dropWhile { it in currentLines }
+
+        return filteredLines.joinToString("\n")
+    }
+
     private fun callLLMForSuggestions(contextCode: String): List<String> {
         println("callLLMForSuggestions() with contextCode:\n$contextCode")
         val response = httpPost("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", contextCode)
@@ -77,29 +144,13 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
     private fun parseLLMResponse(jsonString: String): List<String> {
         return try {
             val llmResponse = Json { ignoreUnknownKeys = true }.decodeFromString<LLMResponse>(jsonString)
-            val content = llmResponse.choices.firstOrNull()?.message?.content ?: ""
-            extractSuggestionsFromContent(content)
+            llmResponse.choices.mapNotNull { it.message.content.trim() }
         } catch (e: Exception) {
             println("parseLLMResponse failed: ${e.message}")
             emptyList()
         }
     }
 
-    /**
-     * 从返回内容中提取代码补全建议
-     */
-    private fun extractSuggestionsFromContent(content: String): List<String> {
-        val suggestions = mutableListOf<String>()
-        val regex = Regex("```java\\n(.*?)\\n```", RegexOption.DOT_MATCHES_ALL)
-        regex.findAll(content).forEach { match ->
-            suggestions.add(match.groupValues[1].trim())
-        }
-        return suggestions
-    }
-
-    /**
-     * 使用OkHttp发起POST请求并返回字符串形式的响应
-     */
     private fun httpPost(url: String, prompt: String): String {
         val client = OkHttpClient()
         val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -126,13 +177,13 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
     private fun buildJsonRequestBody(prompt: String): String {
         val sanitizedPrompt = prompt.replace("\n", " ").replace("<cursor>", "").trim()
         return """
-    {
-        "model": "qwen-plus",
-        "messages": [
-            {"role": "system", "content": "You are an advanced assistant specializing in Java code completion. Respond only with precise code snippets."},
-            {"role": "user", "content": "Based on the following context, suggest relevant Java code completions: \"$sanitizedPrompt\"" }
-        ]
-    }
-    """.trimIndent()
+        {
+            "model": "qwen-plus",
+            "messages": [
+                {"role": "system", "content": "You are an advanced assistant specializing in Java code completion. Respond only with the missing or suggested code snippet without any additional explanation."},
+                {"role": "user", "content": "Based on the following context, suggest relevant Java code completions: \"$sanitizedPrompt\""}
+            ]
+        }
+        """.trimIndent()
     }
 }
