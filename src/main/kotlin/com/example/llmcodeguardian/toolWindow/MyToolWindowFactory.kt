@@ -15,29 +15,29 @@ import javax.swing.JPanel
 import com.intellij.openapi.application.ApplicationManager
 import javax.swing.SwingUtilities
 import java.awt.event.ActionListener
-import com.vladsch.flexmark.parser.Parser
-import com.vladsch.flexmark.html.HtmlRenderer
+import java.awt.Color
+import java.awt.Dimension
+import java.awt.Font
+import javax.swing.BoxLayout
 
 class MyToolWindowFactory : ToolWindowFactory, DumbAware {
 
-    // 用于存储对话历史 (用户输入, AI 回复)
+    // Stores conversation history
     private val conversationHistory = mutableListOf<Pair<String, String>>()
-
-    // Markdown转换器（单例）
-    private val parser: Parser = Parser.builder().build()
-    private val renderer: HtmlRenderer = HtmlRenderer.builder().build()
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val panel = JPanel(BorderLayout())
 
-        // 使用 JEditorPane 显示HTML内容
+        // Chat pane to display messages
         val chatPane = JEditorPane().apply {
             contentType = "text/html"
             isEditable = false
             text = "<html><body style='font-family: sans-serif; margin:0; padding:0;'></body></html>"
         }
 
-        val scrollPane = JBScrollPane(chatPane)
+        val scrollPane = JBScrollPane(chatPane).apply {
+            preferredSize = Dimension(400, 300)
+        }
 
         val inputField = JBTextField().apply {
             toolTipText = "Type your question here"
@@ -50,20 +50,17 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
         sendButton.addActionListener {
             val userInput = inputField.text.trim()
             if (userInput.isNotEmpty()) {
-                // 显示Loading状态
                 conversationHistory.add(userInput to "Loading...")
                 updateChatContent(chatPane)
                 inputField.text = ""
 
-                // 异步调用API
+                // Asynchronous API call
                 ApplicationManager.getApplication().executeOnPooledThread {
                     val aiResponse = getAIResponse(userInput)
 
-                    // 更新最后一条消息（"Loading..." -> AI回应）
-                    conversationHistory.removeAt(conversationHistory.size - 1)
-                    conversationHistory.add(userInput to aiResponse)
+                    // Update message with AI response
+                    conversationHistory[conversationHistory.lastIndex] = userInput to aiResponse
 
-                    // 在EDT上更新UI
                     SwingUtilities.invokeLater {
                         updateChatContent(chatPane)
                     }
@@ -84,75 +81,35 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     private fun getAIResponse(userInput: String): String {
-        // 调用真实API获取AI回复（AIService负责调用DashScope/OpenAI兼容接口）
         return AIService.getAIResponse(userInput)
     }
 
     private fun updateChatContent(chatPane: JEditorPane) {
-        val newHTML = """
-        <html>
-          <body style='font-family: sans-serif; margin:0; padding:0;'>
-            ${generateChatHTML()}
-          </body>
-        </html>
-        """.trimIndent()
-
-        chatPane.text = newHTML
+        val htmlContent = buildHtmlContent()
+        chatPane.text = htmlContent
         chatPane.caretPosition = chatPane.document.length
     }
 
-    private fun generateChatHTML(): String {
+    private fun buildHtmlContent(): String {
         val sb = StringBuilder()
-        sb.append("<div style='padding:8px;'>")
+        sb.append("<html><body style='font-family: sans-serif;'>")
 
-        // 获取资源URL
-        val userIconUrl = this::class.java.getResource("/icon/user.png")?.toExternalForm() ?: ""
-        val loadingIconUrl = this::class.java.getResource("/icon/loading.gif")?.toExternalForm() ?: ""
-        val aiIconUrl = this::class.java.getResource("/icon/ai.png")?.toExternalForm() ?: ""
+        conversationHistory.forEach { (user, ai) ->
+            sb.append("<div style='margin:10px; padding:10px; border:1px solid #ccc; border-radius:8px;'>")
+            sb.append("<b style='color: #007ACC;'>You:</b> ${escapeHtml(user)}")
+            sb.append("</div>")
 
-        for ((user, ai) in conversationHistory) {
-            sb.append(
-                """
-            <div style="margin:8px; padding:8px; background-color:#e0f7fa; border-radius:8px;">
-              <img src="$userIconUrl" width="35" height="35" style="vertical-align: middle; margin-right:5px;">
-              <b>You:</b> ${escapeHTML(user)}
-            </div>
-            """
-            )
-            if (ai == "Loading...") {
-                sb.append(
-                    """
-                <div style="margin:8px; padding:8px; background-color:#f0f0f0; border-radius:8px;">
-                  <img src="$loadingIconUrl" width="35" height="35" style="vertical-align: middle; margin-right:5px;">
-                  <b>AI:</b> 正在思考...
-                </div>
-                """
-                )
-            } else {
-                val aiHtml = markdownToHtml(ai)
-                sb.append(
-                    """
-                <div style="margin:8px; padding:8px; background-color:#f0f0f0; border-radius:8px;">
-                  <img src="$aiIconUrl" width="35" height="35" style="vertical-align: middle; margin-right:5px;">
-                  <b>AI:</b> $aiHtml
-                </div>
-                """
-                )
-            }
+            sb.append("<div style='margin:10px; padding:10px; border:1px solid #ccc; border-radius:8px; background-color:#f9f9f9;'>")
+            sb.append("<b style='color: #FF5722;'>AI:</b> ${escapeHtml(ai)}")
+            sb.append("</div>")
         }
-        sb.append("</div>")
+
+        sb.append("</body></html>")
         return sb.toString()
     }
 
-
-    private fun markdownToHtml(markdownText: String): String {
-        val document = parser.parse(markdownText)
-        return renderer.render(document)
-    }
-
-    private fun escapeHTML(text: String): String {
-        return text
-            .replace("&", "&amp;")
+    private fun escapeHtml(text: String): String {
+        return text.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
