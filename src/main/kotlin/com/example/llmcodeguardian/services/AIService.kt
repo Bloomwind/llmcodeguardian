@@ -45,7 +45,7 @@ object AIService {
         )
     }
 
-    fun getAIResponse(userInput: String, model: String = "qwen-coder-turbo-0919"): String {
+    fun getAIResponse(userInput: String, model: String = "qwen-coder-plus-latest"): String {
         val messages = listOf(
             Message(role = "system", content = "You are a helpful assistant."),
             Message(role = "user", content = userInput)

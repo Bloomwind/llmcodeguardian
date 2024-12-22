@@ -1,29 +1,28 @@
-<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>org.jetbrains.plugins.template</id>
+    <id>com.example.llmcodeguardian</id>
     <name>LLMCodeGuardian</name>
     <vendor>JetBrains</vendor>
 
-    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends> <!-- 保留 Java 依赖 -->
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="org.jetbrains.plugins.template.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
+        <!-- 注册 ToolWindow -->
+        <toolWindow factoryClass="com.example.llmcodeguardian.toolWindow.MyToolWindowFactory" id="askAi"/>
+
+        <!-- 注册 CompletionContributor -->
+        <completion.contributor
+                language="JAVA"
+                implementationClass="com.example.llmcodeguardian.completion.MyLangCompletionContributor"/>
     </extensions>
 
-    <applicationListeners>
-        <listener class="org.jetbrains.plugins.template.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
-    </applicationListeners>
-
     <actions>
-        <action id="org.jetbrains.plugins.template.action.AskAIAction"
-                class="org.jetbrains.plugins.template.action.AskAIAction"
+        <action id="com.example.llmcodeguardian.action.AskAIAction"
+                class="com.example.llmcodeguardian.action.AskAIAction"
                 text="Ask AI"
                 description="Simulates an AI response">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>
-
-
 </idea-plugin>

@@ -1,4 +1,4 @@
-package org.jetbrains.plugins.template.toolWindow
+package com.example.llmcodeguardian.toolWindow
 
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
@@ -104,11 +104,17 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
     private fun generateChatHTML(): String {
         val sb = StringBuilder()
         sb.append("<div style='padding:8px;'>")
+
+        // 获取资源URL
+        val userIconUrl = this::class.java.getResource("/icon/user.png")?.toExternalForm() ?: ""
+        val loadingIconUrl = this::class.java.getResource("/icon/loading.gif")?.toExternalForm() ?: ""
+        val aiIconUrl = this::class.java.getResource("/icon/ai.png")?.toExternalForm() ?: ""
+
         for ((user, ai) in conversationHistory) {
             sb.append(
                 """
             <div style="margin:8px; padding:8px; background-color:#e0f7fa; border-radius:8px;">
-              <img src="file:///C:\Users\ASUS\Desktop\Final Year Project\intellij-platform-plugin-template\src\main\resources\icon\user.png" width="20" height="20" style="vertical-align: middle; margin-right:5px;">
+              <img src="$userIconUrl" width="35" height="35" style="vertical-align: middle; margin-right:5px;">
               <b>You:</b> ${escapeHTML(user)}
             </div>
             """
@@ -117,18 +123,17 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
                 sb.append(
                     """
                 <div style="margin:8px; padding:8px; background-color:#f0f0f0; border-radius:8px;">
-                  <img src="file:///C:\Users\ASUS\Desktop\Final Year Project\intellij-platform-plugin-template\src\main\resources\icon\loading-splash.gif" width="20" height="20" style="vertical-align: middle; margin-right:5px;">
+                  <img src="$loadingIconUrl" width="35" height="35" style="vertical-align: middle; margin-right:5px;">
                   <b>AI:</b> 正在思考...
                 </div>
                 """
                 )
             } else {
-                // 将AI返回的Markdown转换为HTML
                 val aiHtml = markdownToHtml(ai)
                 sb.append(
                     """
                 <div style="margin:8px; padding:8px; background-color:#f0f0f0; border-radius:8px;">
-                  <img src="file:///C:\Users\ASUS\Desktop\Final Year Project\intellij-platform-plugin-template\src\main\resources\icon\ai.png" width="20" height="20" style="vertical-align: middle; margin-right:5px;">
+                  <img src="$aiIconUrl" width="35" height="35" style="vertical-align: middle; margin-right:5px;">
                   <b>AI:</b> $aiHtml
                 </div>
                 """
@@ -138,6 +143,7 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
         sb.append("</div>")
         return sb.toString()
     }
+
 
     private fun markdownToHtml(markdownText: String): String {
         val document = parser.parse(markdownText)

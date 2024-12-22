@@ -1,4 +1,4 @@
-package org.jetbrains.plugins.template.action
+package com.example.llmcodeguardian.action
 
 
 import com.intellij.openapi.actionSystem.AnAction
