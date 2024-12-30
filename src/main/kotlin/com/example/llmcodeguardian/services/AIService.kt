@@ -1,5 +1,4 @@
-package org.jetbrains.plugins.template.service
-
+package com.example.llmcodeguardian.services
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -13,7 +12,6 @@ import java.io.IOException
 object AIService {
     private const val API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
     private const val API_KEY = "sk-a212e3f3d4ed49ab9ad576692dde557f" // 请使用自己的API Key或从环境变量获取
-
     private val client = OkHttpClient()
     private val json = Json {
         ignoreUnknownKeys = true // 启用忽略未知字段
@@ -59,7 +57,6 @@ object AIService {
 
         val requestJson = json.encodeToString(requestObj)
         println("Request JSON:\n$requestJson")
-
         val requestBody = requestJson.toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url(API_URL)
@@ -67,14 +64,11 @@ object AIService {
             .addHeader("Content-Type", "application/json")
             .post(requestBody)
             .build()
-
         return try {
             val response = client.newCall(request).execute()
             val responseBody = response.body?.string()
-
             println("Response Code: ${response.code}")
             println("Response Body:\n$responseBody")
-
             if (response.isSuccessful && responseBody != null) {
                 val chatResponse = json.decodeFromString<ChatResponse>(responseBody)
                 chatResponse.choices.firstOrNull()?.message?.content ?: "No response"

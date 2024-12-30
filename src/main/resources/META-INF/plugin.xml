@@ -1,27 +1,41 @@
 <idea-plugin>
+    <!-- 插件基本信息 -->
     <id>com.example.llmcodeguardian</id>
     <name>LLMCodeGuardian</name>
     <vendor>JetBrains</vendor>
 
-    <depends>com.intellij.modules.java</depends> <!-- 保留 Java 依赖 -->
+    <!-- 插件依赖 -->
+    <depends>com.intellij.modules.java</depends>
 
+    <!-- 指定国际化资源文件 (若有) -->
     <resource-bundle>messages.MyBundle</resource-bundle>
 
+    <!-- 扩展点注册 -->
     <extensions defaultExtensionNs="com.intellij">
-        <!-- 注册 ToolWindow -->
-        <toolWindow factoryClass="com.example.llmcodeguardian.toolWindow.MyToolWindowFactory" id="askAi"/>
+        <!-- 注册一个 Project-level Service -->
+        <projectService serviceImplementation="com.example.llmcodeguardian.listeners.MyEditorListenerService" />
+        <!-- 注册一个 ToolWindow -->
+        <toolWindow
+                factoryClass="com.example.llmcodeguardian.toolWindow.MyToolWindowFactory"
+                id="askAi"
+        />
 
-        <!-- 注册 CompletionContributor -->
+        <!-- 注册一个代码补全的 Contributor (只在 Java 中启用) -->
         <completion.contributor
                 language="JAVA"
-                implementationClass="com.example.llmcodeguardian.completion.MyLangCompletionContributor"/>
+                implementationClass="com.example.llmcodeguardian.completion.MyLangCompletionContributor"
+        />
     </extensions>
 
+    <!-- 注册一个 Action (菜单/快捷方式) -->
     <actions>
-        <action id="com.example.llmcodeguardian.action.AskAIAction"
+        <action
+                id="com.example.llmcodeguardian.action.AskAIAction"
                 class="com.example.llmcodeguardian.action.AskAIAction"
                 text="Ask AI"
-                description="Simulates an AI response">
+                description="Simulates an AI response"
+        >
+            <!-- 将此 Action 放到 Tools 菜单里，排列在最后 -->
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>
