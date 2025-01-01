@@ -8,38 +8,26 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
 import com.example.llmcodeguardian.services.AIService
-import java.awt.BorderLayout
-import javax.swing.JButton
-import javax.swing.JEditorPane
-import javax.swing.JPanel
 import com.intellij.openapi.application.ApplicationManager
-import javax.swing.SwingUtilities
-import java.awt.event.ActionEvent
-import java.awt.event.ActionListener
+import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Dimension
-import java.awt.Font
-import javax.swing.JLabel
-import javax.swing.BorderFactory
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import javax.swing.*
+import javax.swing.event.HyperlinkEvent
+import javax.swing.event.HyperlinkListener
 
 class MyToolWindowFactory : ToolWindowFactory, DumbAware {
 
-    /**
-     * 当前会话的消息记录：Pair<用户输入, AI回复>
-     */
-    private val conversationHistory = mutableListOf<Pair<String, String>>()
+    private val conversationMessages = mutableListOf(
+        AIService.Message(role = "system", content = "You are a helpful assistant.")
+    )
 
-    /**
-     * 用于暂存所有历史会话的记录（只在本次插件运行期间有效）
-     * 每新建一次对话，就把当前对话记录存进去，然后清空 conversationHistory
-     */
-    private val previousConversations = mutableListOf<List<Pair<String, String>>>()
+    private val previousConversations = mutableListOf<List<AIService.Message>>()
 
-    /**
-     * Copilot Chat 风格的初始欢迎文本，可在新建对话时重置
-     */
     private val initialWelcomeHtml = """
         <html>
           <body style="font-family: sans-serif; margin: 0; padding: 0;">
@@ -56,101 +44,107 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
         </html>
     """.trimIndent()
 
-    // 如果需要头像或加载动画，可以保留以下资源；未使用也可以删除
     private val USER_AVATAR_URL = MyToolWindowFactory::class.java.getResource("/icon/user.png")?.toExternalForm()
     private val AI_AVATAR_URL = MyToolWindowFactory::class.java.getResource("/icon/ai.png")?.toExternalForm()
     private val SPINNER_IMAGE_URL = MyToolWindowFactory::class.java.getResource("/icon/spinner.gif")?.toExternalForm()
+
+    // ========== 新增：标记是否暗色模式 ==========
+    private var isDarkMode = false
+
+    private lateinit var chatPane: JEditorPane
+
+    // ========== 新增：这几个面板，需要在切换主题时修改颜色，所以提出来做成员变量 ==========
+    private lateinit var topPanel: JPanel
+    private lateinit var inputPanel: JPanel
+    private lateinit var titleLabel: JLabel
+    private lateinit var newConversationLabel: JLabel
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val mainPanel = JPanel(BorderLayout())
 
         // ========== 顶部栏 ==========
-
-        val topPanel = JPanel(BorderLayout()).apply {
+        topPanel = JPanel(BorderLayout()).apply {
             background = Color(0xF5, 0xF5, 0xF5)
             border = BorderFactory.createEmptyBorder(8, 16, 8, 16)
             preferredSize = Dimension(400, 60)
         }
 
-        val titleLabel = JLabel("<html><b style='font-size:14px;'>CodeGuardian</b></html>").apply {
+        titleLabel = JLabel("<html><b style='font-size:14px;'>CodeGuardian</b></html>").apply {
             foreground = Color(0x33, 0x33, 0x33)
         }
         topPanel.add(titleLabel, BorderLayout.WEST)
 
-        // “New Conversation” 链接，点击后清空当前对话，另存到 previousConversations
-        val newConversationLabel = JLabel("<html><a href='#' style='text-decoration:none; font-size:12px;'>New Conversation</a></html>").apply {
+        // “New Conversation” 链接
+        newConversationLabel = JLabel("<html><a href='#' style='text-decoration:none; font-size:12px;'>New Conversation</a></html>").apply {
             foreground = Color(0x00, 0x7A, 0xCC)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
-                    // 若当前会话有内容，则存储到 previousConversations
-                    if (conversationHistory.isNotEmpty()) {
-                        previousConversations.add(conversationHistory.toList())
+                    if (conversationMessages.size > 1) {
+                        previousConversations.add(conversationMessages.toList())
                     }
-                    // 清空当前对话
-                    conversationHistory.clear()
-                    // 重置聊天窗口显示
+                    conversationMessages.retainAll { it.role == "system" }
                     chatPane.text = initialWelcomeHtml
                 }
             })
         }
-        topPanel.add(newConversationLabel, BorderLayout.EAST)
+
+        // ========== 新增：切换主题的按钮 ==========
+        val toggleThemeButton = JButton("Toggle Theme").apply {
+            toolTipText = "Switch between light/dark theme"
+            addActionListener {
+                isDarkMode = !isDarkMode
+                applyThemeColors()     // 调整顶栏、底栏等颜色
+                updateChatContent()    // 重新刷新聊天 HTML
+            }
+        }
+
+        // 把“New Conversation”+“Toggle Theme”一起放到顶部右侧
+        val rightPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            add(newConversationLabel)
+            add(Box.createHorizontalStrut(16))
+            add(toggleThemeButton)
+            // 背景可设为透明或跟 topPanel 一样
+            isOpaque = false
+        }
+        topPanel.add(rightPanel, BorderLayout.EAST)
 
         mainPanel.add(topPanel, BorderLayout.NORTH)
 
         // ========== 聊天窗口 ==========
-
         chatPane = JEditorPane().apply {
             contentType = "text/html"
             isEditable = false
-            text = initialWelcomeHtml  // 初始欢迎
+            text = initialWelcomeHtml
+            addHyperlinkListener(copyLinkListener)
         }
-
         val scrollPane = JBScrollPane(chatPane).apply {
-            preferredSize = Dimension(400, 300)
+            preferredSize = Dimension(500, 400)
         }
 
         // ========== 底部输入面板 ==========
-
         val inputField = JBTextField().apply {
             toolTipText = "Ask Copilot a question or type '/' for commands"
             text = ""
         }
-
-        // 使用纯文本按钮，而非图标
         val sendButton = JButton("Send").apply {
             toolTipText = "Send your message"
         }
-
-        // 回车键发送
-        inputField.addActionListener {
-            sendButton.doClick()
-        }
-
-        // 点击发送按钮逻辑
+        inputField.addActionListener { sendButton.doClick() }
         sendButton.addActionListener {
             val userInput = inputField.text.trim()
             if (userInput.isNotEmpty()) {
-                // 添加到对话记录
-                conversationHistory.add(userInput to "Loading...")
-                // 更新UI
+                conversationMessages.add(AIService.Message(role = "user", content = userInput))
+                conversationMessages.add(AIService.Message(role = "assistant", content = "Loading..."))
                 updateChatContent()
-                // 清空输入框
                 inputField.text = ""
 
-                // 异步调用AI
-                ApplicationManager.getApplication().executeOnPooledThread {
-                    val aiResponse = AIService.getAIResponse(userInput)
-                    // 替换掉 "Loading..." 为实际回复
-                    conversationHistory[conversationHistory.lastIndex] = userInput to aiResponse
-
-                    SwingUtilities.invokeLater {
-                        updateChatContent()
-                    }
+                SwingUtilities.invokeLater {
+                    callAiAsync()
                 }
             }
         }
-
-        val inputPanel = JPanel(BorderLayout()).apply {
+        inputPanel = JPanel(BorderLayout()).apply {
             border = BorderFactory.createEmptyBorder(8, 16, 8, 16)
             background = Color.WHITE
             add(inputField, BorderLayout.CENTER)
@@ -165,105 +159,100 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     /**
-     * 聊天窗控件，方便在方法中直接更新
+     * ========== 新增：切换顶栏/底栏等面板的颜色 ==========
      */
-    private lateinit var chatPane: JEditorPane
+    private fun applyThemeColors() {
+        if (isDarkMode) {
+            // 顶部背景
+            topPanel.background = Color(0x3C, 0x3F, 0x41)
+            titleLabel.foreground = Color(0xDD, 0xDD, 0xDD)
+            newConversationLabel.foreground = Color(0x2A, 0x92, 0xD6)
 
-    /**
-     * 更新聊天内容 (重新生成HTML)
-     */
+            // 底部
+            inputPanel.background = Color(0x3C, 0x3F, 0x41)
+        } else {
+            // 恢复到默认
+            topPanel.background = Color(0xF5, 0xF5, 0xF5)
+            titleLabel.foreground = Color(0x33, 0x33, 0x33)
+            newConversationLabel.foreground = Color(0x00, 0x7A, 0xCC)
+
+            inputPanel.background = Color.WHITE
+        }
+        topPanel.repaint()
+        inputPanel.repaint()
+    }
+
+    private fun callAiAsync() {
+        val loadingIndex = conversationMessages.lastIndex
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val responseText = AIService.getAIResponse(conversationMessages)
+            if (conversationMessages.size - 1 == loadingIndex &&
+                conversationMessages[loadingIndex].role == "assistant" &&
+                conversationMessages[loadingIndex].content == "Loading..."
+            ) {
+                conversationMessages[loadingIndex] = AIService.Message(role = "assistant", content = responseText)
+            }
+            SwingUtilities.invokeLater {
+                updateChatContent()
+            }
+        }
+    }
+
     private fun updateChatContent() {
         chatPane.text = buildHtmlContent()
-        // 滚动到底部
         chatPane.caretPosition = chatPane.document.length
     }
 
     /**
-     * 根据 conversationHistory 构建HTML
+     * 这里改动最少，只是把原本写死的颜色用 if (isDarkMode) ... else ... 来区分
      */
     private fun buildHtmlContent(): String {
+        // 如果暗色模式，替换相应的颜色
+        val borderColor = if (isDarkMode) "#444444" else "#e1e4e8"
+        val headerTextColor = if (isDarkMode) "#DDDDDD" else "#333333"
+        val subTextColor = if (isDarkMode) "#BBBBBB" else "#666666"
+
+        val userBubbleBg = if (isDarkMode) "#3A3A3A" else "#f0f0f0"
+        val userTextColor = if (isDarkMode) "#EEEEEE" else "#333333"
+
+        val aiBubbleBg = if (isDarkMode) "#2A2A2A" else "#f8f8f8"
+        val aiTitleColor = if (isDarkMode) "#BBBBBB" else "#555555"
+        val aiTextColor = if (isDarkMode) "#DDDDDD" else "#333333"
+
         val sb = StringBuilder()
+        sb.append("<html><body style='font-family: sans-serif; margin:0; padding:0;'>")
+
+        // 顶部提示
         sb.append(
             """
-            <html>
-              <body style="font-family: sans-serif; margin:0; padding:0;">
+            <div style="padding: 10px; border-bottom: 1px solid $borderColor;">
+              <div style="margin-bottom: 8px; font-weight: bold; font-size: 14px; color: $headerTextColor;">
+                Hi <b>@Bloomwind</b>, how can I help you?
+              </div>
+              <div style="font-size: 12px; color: $subTextColor;">
+                I’m powered by AI, so surprises and mistakes are possible. Make sure to verify any generated code or suggestions,
+                and share feedback so that we can learn and improve.
+              </div>
+            </div>
             """.trimIndent()
         )
 
-        // 你可以选择保留最初的欢迎片段，也可以只显示对话
-        // 这里保留最初的标题区
-        sb.append(
-            """
-                <div style="padding: 10px; border-bottom: 1px solid #e1e4e8;">
-                  <div style="margin-bottom: 8px; font-weight: bold; font-size: 14px;">
-                    Hi <b>@Bloomwind</b>, how can I help you?
-                  </div>
-                  <div style="font-size: 12px; color: #666;">
-                    I’m powered by AI, so surprises and mistakes are possible. Make sure to verify any generated code or suggestions,
-                    and share feedback so that we can learn and improve.
-                  </div>
-                </div>
-            """.trimIndent()
-        )
-
-        // 遍历对话记录
-        conversationHistory.forEach { (user, ai) ->
-            // ========== 用户消息 (右侧) ==========
-            sb.append(
-                """
-                  <div style="display: flex; justify-content: flex-end; margin: 10px;">
-                    <div style="background-color: #f0f0f0; border-radius: 6px; padding: 8px; max-width: 60%;">
-                      <div style="font-size: 12px; font-weight: bold; color: #333; margin-bottom: 4px;">
-            """.trimIndent()
-            )
-            if (USER_AVATAR_URL != null) {
-                sb.append(
-                    """<img src="$USER_AVATAR_URL" style="width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; margin-right: 5px;" />"""
-                )
-            }
-            sb.append(
-                """You</div>
-                      <div style="font-size: 13px; color: #333;">
-                        ${escapeHtml(user)}
-                      </div>
-                    </div>
-                  </div>
-                """.trimIndent()
-            )
-
-            // ========== AI 回答 (左侧) ==========
-            val aiContent = if (ai == "Loading...") {
-                val spinnerHtml = if (SPINNER_IMAGE_URL != null) {
-                    """<img src="$SPINNER_IMAGE_URL" alt="Loading" style="width:16px; height:16px; vertical-align:middle;" />"""
-                } else {
-                    """<span style="color:#999;">Loading...</span>"""
-                }
-                "$spinnerHtml <span style='margin-left:6px; color:#999;'>Thinking...</span>"
+        // 逐条渲染消息(从第1条开始，跳过 system)
+        for (i in 1 until conversationMessages.size) {
+            val msg = conversationMessages[i]
+            if (msg.role == "user") {
+                sb.append(renderUserMessage(msg.content, userBubbleBg, userTextColor))
             } else {
-                escapeHtml(ai)
+                val aiHtml = if (msg.content == "Loading...") {
+                    val spinner = SPINNER_IMAGE_URL?.let {
+                        """<img src="$it" alt="Loading" style="width:16px; height:16px; vertical-align:middle;" />"""
+                    } ?: "<span style='color:#999;'>Loading...</span>"
+                    "$spinner <span style='margin-left:6px; color:#999;'>Thinking...</span>"
+                } else {
+                    formatAiResponse(msg.content, isDarkMode)
+                }
+                sb.append(renderAssistantMessage(aiHtml, aiBubbleBg, aiTitleColor, aiTextColor))
             }
-
-            sb.append(
-                """
-                  <div style="display: flex; justify-content: flex-start; margin: 10px;">
-                    <div style="background-color: #f8f8f8; border-radius: 6px; padding: 8px; max-width: 60%;">
-                      <div style="font-size: 12px; font-weight: bold; color: #555; margin-bottom: 4px;">
-                """.trimIndent()
-            )
-            if (AI_AVATAR_URL != null) {
-                sb.append(
-                    """<img src="$AI_AVATAR_URL" style="width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; margin-right: 5px;" />"""
-                )
-            }
-            sb.append(
-                """Copilot</div>
-                      <div style="font-size: 13px; color: #333;">
-                        $aiContent
-                      </div>
-                    </div>
-                  </div>
-                """.trimIndent()
-            )
         }
 
         sb.append("</body></html>")
@@ -271,8 +260,96 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
     }
 
     /**
-     * 转义HTML
+     * 这里也稍做改动：将背景、文字颜色作为参数
      */
+    private fun renderUserMessage(content: String, bubbleBg: String, textColor: String): String {
+        val builder = StringBuilder()
+        builder.append(
+            """
+            <div style="display: flex; justify-content: flex-end; margin: 10px;">
+              <div style="background-color: $bubbleBg; border-radius: 6px; padding: 8px; max-width: 60%;">
+                <div style="font-size: 12px; font-weight: bold; color: $textColor; margin-bottom: 4px;">
+            """.trimIndent()
+        )
+        USER_AVATAR_URL?.let {
+            builder.append("<img src=\"$it\" style=\"width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; margin-right: 5px;\" />")
+        }
+        builder.append("You</div>")
+        builder.append(
+            """
+                <div style="font-size: 13px; color: $textColor;">
+                  ${escapeHtml(content)}
+                </div>
+              </div>
+            </div>
+            """.trimIndent()
+        )
+        return builder.toString()
+    }
+
+    private fun renderAssistantMessage(aiHtml: String, bubbleBg: String, titleColor: String, textColor: String): String {
+        val builder = StringBuilder()
+        builder.append(
+            """
+            <div style="display: flex; justify-content: flex-start; margin: 10px;">
+              <div style="background-color: $bubbleBg; border-radius: 6px; padding: 8px; max-width: 60%;">
+                <div style="font-size: 12px; font-weight: bold; color: $titleColor; margin-bottom: 4px;">
+            """.trimIndent()
+        )
+        AI_AVATAR_URL?.let {
+            builder.append("<img src=\"$it\" style=\"width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; margin-right: 5px;\" />")
+        }
+        builder.append("Copilot</div>")
+        builder.append(
+            """
+                <div style="font-size: 13px; color: $textColor;">
+                  $aiHtml
+                </div>
+              </div>
+            </div>
+            """.trimIndent()
+        )
+        return builder.toString()
+    }
+
+    /**
+     * 这里同理，根据是否暗色模式切换代码块背景/文字
+     */
+    private fun formatAiResponse(raw: String, isDark: Boolean): String {
+        val escaped = escapeHtml(raw)
+        val codeRegex = Regex("(?s)```(.*?)```")
+        var index = 0
+
+        // 不同主题的颜色
+        val codeBg = if (isDark) "#3A3A3A" else "#f5f5f5"
+        val codeBorder = if (isDark) "#666666" else "#dddddd"
+        val codeText = if (isDark) "#EEEEEE" else "#333333"
+        val copyBtnColor = if (isDark) "#AAAAAA" else "#007ACC"
+        val copyBtnBg = if (isDark) "#444444" else "#e6f2ff"
+
+        val replaced = codeRegex.replace(escaped) { match ->
+            val codeContent = match.groups[1]?.value ?: ""
+            index++
+            val codeId = "codeblock-$index"
+            val codeHtml = codeContent.replace("<", "&lt;").replace(">", "&gt;")
+
+            """
+            <div style="position: relative; border: 1px solid $codeBorder; border-radius:4px; margin: 8px 0; padding: 4px;">
+              <pre style="margin:0; background:$codeBg; color:$codeText; padding: 6px; border-radius:4px;">
+                <code id="$codeId" style="font-family: Consolas, monospace; font-size: 12px;">$codeHtml</code>
+              </pre>
+              <a href="copy:$codeId"
+                 style="position:absolute; top:4px; right:4px; font-size:12px; color:$copyBtnColor;
+                        text-decoration:none; border:1px solid $copyBtnColor; padding:2px 4px;
+                        border-radius:4px; background-color:$copyBtnBg;">
+                Copy
+              </a>
+            </div>
+            """.trimIndent()
+        }
+        return replaced.replace("\n", "<br/>")
+    }
+
     private fun escapeHtml(text: String): String {
         return text
             .replace("&", "&amp;")
@@ -280,5 +357,22 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
             .replace(">", "&gt;")
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
+    }
+
+    private val copyLinkListener = HyperlinkListener { e ->
+        if (e.eventType == HyperlinkEvent.EventType.ACTIVATED) {
+            val desc = e.description
+            if (desc.startsWith("copy:")) {
+                val codeId = desc.substringAfter("copy:")
+                val doc = chatPane.document
+                val htmlDoc = doc as? javax.swing.text.html.HTMLDocument ?: return@HyperlinkListener
+                val elem = htmlDoc.getElement(codeId) ?: return@HyperlinkListener
+
+                val codeText = htmlDoc.getText(elem.startOffset, elem.endOffset - elem.startOffset)
+                val sel = StringSelection(codeText)
+                Toolkit.getDefaultToolkit().systemClipboard.setContents(sel, null)
+                JOptionPane.showMessageDialog(chatPane, "Code copied to clipboard!", "Copy", JOptionPane.INFORMATION_MESSAGE)
+            }
+        }
     }
 }

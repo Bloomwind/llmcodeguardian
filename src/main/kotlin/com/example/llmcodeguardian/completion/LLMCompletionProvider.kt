@@ -16,10 +16,11 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.event.*
 import javax.swing.JPanel
 import javax.swing.BoxLayout
 import javax.swing.JButton
-import javax.swing.ListCellRenderer
+import javax.swing.JCheckBox
 import javax.swing.JLabel
 
 class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
@@ -56,12 +57,21 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
         val panel = JPanel()
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
 
+        val instructionLabel = JLabel("Use arrow keys to navigate, Enter to apply, or click Apply Button.")
+        instructionLabel.font = Font(Font.SANS_SERIF, Font.ITALIC, 12)
+        instructionLabel.alignmentX = JPanel.CENTER_ALIGNMENT
+        panel.add(instructionLabel)
+
         val list = JBList(suggestions)
         list.setCellRenderer { _, value, _, _, _ ->
-            val label = JLabel("<html><pre>${value.replace("\n", "<br>")}</pre></html>")
+            val panel = JPanel()
+            panel.layout = BoxLayout(panel, BoxLayout.X_AXIS)
+            val checkBox = JCheckBox()
+            val label = JLabel("<html><pre style='background-color:#f5f5f5; padding:5px; border:1px solid #ccc;'>${value.replace("\n", "<br>")}</pre></html>")
             label.font = Font(Font.MONOSPACED, Font.PLAIN, 14)
-            label.preferredSize = Dimension(380, label.preferredSize.height)
-            label
+            panel.add(checkBox)
+            panel.add(label)
+            panel
         }
         list.setEmptyText("No suggestions available")
 
@@ -70,6 +80,19 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
         panel.add(scrollPane)
 
         val applyButton = JButton("Apply Selected Suggestion")
+        applyButton.font = Font(Font.SANS_SERIF, Font.BOLD, 12)
+        applyButton.preferredSize = Dimension(200, 30)
+        applyButton.background = java.awt.Color(59, 89, 152)
+        applyButton.foreground = java.awt.Color.WHITE
+        applyButton.addMouseListener(object : MouseAdapter() {
+            override fun mouseEntered(e: MouseEvent?) {
+                applyButton.background = java.awt.Color(89, 119, 182)
+            }
+
+            override fun mouseExited(e: MouseEvent?) {
+                applyButton.background = java.awt.Color(59, 89, 152)
+            }
+        })
         applyButton.addActionListener {
             val selectedValue = list.selectedValue
             if (selectedValue != null) {
@@ -77,6 +100,17 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
             }
         }
         panel.add(applyButton)
+
+        list.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent?) {
+                if (e?.keyCode == KeyEvent.VK_ENTER) {
+                    val selectedValue = list.selectedValue
+                    if (selectedValue != null) {
+                        applySuggestion(editor, selectedValue)
+                    }
+                }
+            }
+        })
 
         val popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(panel, list)
@@ -121,7 +155,7 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
 
     private fun callLLMForSuggestions(contextCode: String): List<String> {
         println("callLLMForSuggestions() with contextCode:\n$contextCode")
-        val response = httpPost("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", contextCode)
+        val response = httpPost("http://172.31.233.216:8080/v1/chat/completions", contextCode)
         println("Response from LLM: $response")
         return parseLLMResponse(response)
     }
