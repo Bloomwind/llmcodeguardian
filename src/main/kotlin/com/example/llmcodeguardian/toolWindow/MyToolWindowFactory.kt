@@ -338,10 +338,7 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
               <pre style="margin:0; background:$codeBg; color:$codeText; padding: 6px; border-radius:4px;">
                 <code id="$codeId" style="font-family: Consolas, monospace; font-size: 12px;">$codeHtml</code>
               </pre>
-              <a href="copy:$codeId"
-                 style="position:absolute; top:4px; right:4px; font-size:12px; color:$copyBtnColor;
-                        text-decoration:none; border:1px solid $copyBtnColor; padding:2px 4px;
-                        border-radius:4px; background-color:$copyBtnBg;">
+              <a href="copy:$codeId" style="position: absolute; top: 4px; right: 4px; padding: 2px 6px; font-size: 12px; color: $copyBtnColor; background: $copyBtnBg; border-radius: 4px; text-decoration: none;">
                 Copy
               </a>
             </div>
