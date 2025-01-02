@@ -33,11 +33,11 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
           <body style="font-family: sans-serif; margin: 0; padding: 0;">
             <div style="padding: 10px;">
               <div style="margin-bottom: 8px; font-weight: bold; font-size: 14px;">
-                Hi, how can I help you?
+                你好，<b>开发者</b>，我可以如何帮助您？
               </div>
               <div style="font-size: 12px; color: #666;">
-                I’m powered by AI, so surprises and mistakes are possible. Make sure to verify any generated code or suggestions,
-                and share feedback so that we can learn and improve.
+                我由 AI 驱动，因此可能会带来一些惊喜和错误。请务必验证生成的代码或建议，
+                如果有任何反馈，欢迎分享以帮助我们不断改进。
               </div>
             </div>
           </body>
@@ -75,7 +75,7 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
         topPanel.add(titleLabel, BorderLayout.WEST)
 
         // “New Conversation” 链接
-        newConversationLabel = JLabel("<html><a href='#' style='text-decoration:none; font-size:12px;'>New Conversation</a></html>").apply {
+        newConversationLabel = JLabel("<html><a href='#' style='text-decoration:none; font-size:12px;'>新建对话</a></html>").apply {
             foreground = Color(0x00, 0x7A, 0xCC)
             addMouseListener(object : MouseAdapter() {
                 override fun mouseClicked(e: MouseEvent) {
@@ -89,7 +89,7 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
         }
 
         // ========== 新增：切换主题的按钮 ==========
-        val toggleThemeButton = JButton("Toggle Theme").apply {
+        val toggleThemeButton = JButton("切换明/暗主题").apply {
             toolTipText = "Switch between light/dark theme"
             addActionListener {
                 isDarkMode = !isDarkMode
@@ -127,7 +127,7 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
             toolTipText = "Ask Copilot a question or type '/' for commands"
             text = ""
         }
-        val sendButton = JButton("Send").apply {
+        val sendButton = JButton("发送").apply {
             toolTipText = "Send your message"
         }
         inputField.addActionListener { sendButton.doClick() }
@@ -185,7 +185,7 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
     private fun callAiAsync() {
         val loadingIndex = conversationMessages.lastIndex
         ApplicationManager.getApplication().executeOnPooledThread {
-            val responseText = AIService.getAIResponse(conversationMessages)
+            val responseText = AIService.getAnswerResponse(conversationMessages)
             if (conversationMessages.size - 1 == loadingIndex &&
                 conversationMessages[loadingIndex].role == "assistant" &&
                 conversationMessages[loadingIndex].content == "Loading..."
@@ -225,13 +225,13 @@ class MyToolWindowFactory : ToolWindowFactory, DumbAware {
         // 顶部提示
         sb.append(
             """
-            <div style="padding: 10px; border-bottom: 1px solid $borderColor;">
-              <div style="margin-bottom: 8px; font-weight: bold; font-size: 14px; color: $headerTextColor;">
-                Hi <b>@Bloomwind</b>, how can I help you?
+            <div style="padding: 10px; border-bottom: 1px solid #cccccc; background-color: #f9f9f9;">
+              <div style="margin-bottom: 8px; font-weight: bold; font-size: 16px; color: #333333;">
+                你好，<b>开发者</b>，我可以如何帮助您？
               </div>
-              <div style="font-size: 12px; color: $subTextColor;">
-                I’m powered by AI, so surprises and mistakes are possible. Make sure to verify any generated code or suggestions,
-                and share feedback so that we can learn and improve.
+              <div style="font-size: 14px; color: #666666; line-height: 1.5;">
+                我由 AI 驱动，因此可能会带来一些惊喜和错误。请务必验证生成的代码或建议，
+                如果有任何反馈，欢迎分享以帮助我们不断改进。
               </div>
             </div>
             """.trimIndent()

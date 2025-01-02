@@ -14,6 +14,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <!-- 注册一个 Project-level Service -->
         <projectService serviceImplementation="com.example.llmcodeguardian.listeners.MyEditorListenerService" />
+
         <!-- 注册一个 ToolWindow -->
         <toolWindow
                 factoryClass="com.example.llmcodeguardian.toolWindow.MyToolWindowFactory"
@@ -29,13 +30,22 @@
 
     <!-- 注册一个 Action (菜单/快捷方式) -->
     <actions>
+        <!-- 右键菜单操作 -->
+        <action
+                id="com.example.llmcodeguardian.actions.TranslateCode"
+                class="com.example.llmcodeguardian.listeners.CodeTranslationAction"
+                text="Translate Code"
+                description="Translate selected code into comments">
+            <!-- 这里补齐 relative-to-action="EditorCopy" -->
+            <add-to-group group-id="EditorPopupMenu" anchor="after" relative-to-action="EditorCopy"/>
+        </action>
+
+        <!-- 工具菜单操作 -->
         <action
                 id="com.example.llmcodeguardian.action.AskAIAction"
                 class="com.example.llmcodeguardian.action.AskAIAction"
                 text="Ask AI"
-                description="Simulates an AI response"
-        >
-            <!-- 将此 Action 放到 Tools 菜单里，排列在最后 -->
+                description="Simulates an AI response">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>

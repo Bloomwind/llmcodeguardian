@@ -1,29 +1,25 @@
 package com.example.llmcodeguardian.completion
 
+import com.example.llmcodeguardian.services.AIService
+import com.example.llmcodeguardian.services.AIService.Message
 import com.intellij.codeInsight.completion.*
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBList
 import com.intellij.util.ProcessingContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
-import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.Font
 import java.awt.event.*
-import javax.swing.JPanel
-import javax.swing.BoxLayout
-import javax.swing.JButton
-import javax.swing.JCheckBox
-import javax.swing.JLabel
+import javax.swing.*
 
 class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
+
+    private var popup: JBPopup? = null // 跟踪当前弹窗
 
     override fun addCompletions(
         parameters: CompletionParameters,
@@ -40,184 +36,182 @@ class LLMCompletionProvider : CompletionProvider<CompletionParameters>() {
         println("Generated contextCode: $contextCode")
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val suggestions = callLLMForSuggestions(contextCode)
+            val systemMessage = Message("system", "Suggest code completions for the following context:")
+            val userMessage = Message("user", contextCode)
+            val suggestions = callLLMForSuggestions(listOf(systemMessage, userMessage))
             println("LLM suggestions returned: $suggestions")
 
             ApplicationManager.getApplication().invokeLater {
                 if (suggestions.isNotEmpty()) {
-                    displayPopup(parameters.editor, suggestions)
+                    updateOrCreatePopup(parameters.editor, suggestions)
                 } else {
                     println("No valid suggestions found.")
                 }
             }
+
         }
     }
 
-    private fun displayPopup(editor: Editor, suggestions: List<String>) {
+    private fun updateOrCreatePopup(editor: Editor, suggestions: List<String>) {
+        val codeContent = suggestions.joinToString("\n\n") // 合并所有代码块为一个字符串
+        if (popup != null && popup!!.isVisible) {
+            // 更新现有弹窗的内容
+            val contentPanel = popup!!.content as JPanel
+            val textArea = contentPanel.getComponent(1) as JTextArea
+            textArea.text = codeContent
+        } else {
+            // 创建新的弹窗
+            popup = createPopup(editor, codeContent)
+            popup?.showInBestPositionFor(editor)
+        }
+    }
+
+    private fun createPopup(editor: Editor, codeContent: String): JBPopup {
         val panel = JPanel()
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.border = BorderFactory.createEmptyBorder(15, 15, 15, 15) // 增加内边距
 
-        val instructionLabel = JLabel("Use arrow keys to navigate, Enter to apply, or click Apply Button.")
+        // 提示标签
+        val instructionLabel = JLabel("<html><div style='text-align: center;'>Review the suggested code below.<br>Press 'Apply' to insert at the cursor.</div></html>")
         instructionLabel.font = Font(Font.SANS_SERIF, Font.ITALIC, 12)
+        instructionLabel.foreground = java.awt.Color(0, 102, 204) // 设置文字为蓝色
         instructionLabel.alignmentX = JPanel.CENTER_ALIGNMENT
         panel.add(instructionLabel)
 
-        val list = JBList(suggestions)
-        list.setCellRenderer { _, value, _, _, _ ->
-            val panel = JPanel()
-            panel.layout = BoxLayout(panel, BoxLayout.X_AXIS)
-            val checkBox = JCheckBox()
-            val label = JLabel("<html><pre style='background-color:#f5f5f5; padding:5px; border:1px solid #ccc;'>${value.replace("\n", "<br>")}</pre></html>")
-            label.font = Font(Font.MONOSPACED, Font.PLAIN, 14)
-            panel.add(checkBox)
-            panel.add(label)
-            panel
-        }
-        list.setEmptyText("No suggestions available")
-
-        val scrollPane = JBScrollPane(list)
-        scrollPane.preferredSize = Dimension(400, 300)
+        // 代码显示区域
+        val textArea = JTextArea(codeContent)
+        textArea.lineWrap = true
+        textArea.wrapStyleWord = true
+        textArea.isEditable = false
+        textArea.font = Font(Font.MONOSPACED, Font.PLAIN, 14)
+        textArea.border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(java.awt.Color(200, 200, 200), 1),
+            BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        )
+        val scrollPane = JBScrollPane(textArea)
+        scrollPane.preferredSize = Dimension(600, 400)
+        scrollPane.border = BorderFactory.createLineBorder(java.awt.Color(150, 150, 150))
         panel.add(scrollPane)
 
-        val applyButton = JButton("Apply Selected Suggestion")
-        applyButton.font = Font(Font.SANS_SERIF, Font.BOLD, 12)
-        applyButton.preferredSize = Dimension(200, 30)
-        applyButton.background = java.awt.Color(59, 89, 152)
-        applyButton.foreground = java.awt.Color.WHITE
-        applyButton.addMouseListener(object : MouseAdapter() {
-            override fun mouseEntered(e: MouseEvent?) {
-                applyButton.background = java.awt.Color(89, 119, 182)
-            }
+        // "应用"按钮
+        val applyButton = JButton("<html><span style='color: #0056b3;'>Apply Suggestion</span></html>").apply {
+            font = Font(Font.SANS_SERIF, Font.BOLD, 14)
+            minimumSize = Dimension(220, 50) // 确保按钮大小足够
+            preferredSize = Dimension(220, 50)
+            background = java.awt.Color(245, 245, 245) // 按钮背景色为浅灰
+            border = BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(java.awt.Color(0, 102, 204), 2), // 边框颜色为蓝色
+                BorderFactory.createEmptyBorder(5, 15, 5, 15)
+            )
+            isFocusPainted = false // 移除焦点框
 
-            override fun mouseExited(e: MouseEvent?) {
-                applyButton.background = java.awt.Color(59, 89, 152)
-            }
-        })
-        applyButton.addActionListener {
-            val selectedValue = list.selectedValue
-            if (selectedValue != null) {
-                applySuggestion(editor, selectedValue)
+            // 鼠标交互效果
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseEntered(e: MouseEvent?) {
+                    background = java.awt.Color(230, 230, 250) // 鼠标悬停背景色
+                    cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR) // 鼠标变为手形
+                }
+
+                override fun mouseExited(e: MouseEvent?) {
+                    background = java.awt.Color(245, 245, 245) // 恢复背景色
+                    cursor = Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR)
+                }
+
+                override fun mousePressed(e: MouseEvent?) {
+                    background = java.awt.Color(220, 220, 240) // 按下背景色
+                }
+
+                override fun mouseReleased(e: MouseEvent?) {
+                    background = java.awt.Color(230, 230, 250) // 恢复悬停背景色
+                }
+            })
+
+            // 按钮点击事件
+            addActionListener {
+                applySuggestion(editor, codeContent)
             }
         }
+        panel.add(Box.createVerticalStrut(15)) // 添加垂直间距
         panel.add(applyButton)
+        panel.alignmentX = JPanel.CENTER_ALIGNMENT
 
-        list.addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent?) {
-                if (e?.keyCode == KeyEvent.VK_ENTER) {
-                    val selectedValue = list.selectedValue
-                    if (selectedValue != null) {
-                        applySuggestion(editor, selectedValue)
-                    }
-                }
-            }
-        })
-
-        val popup = JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(panel, list)
+        // 返回美化后的弹窗
+        return JBPopupFactory.getInstance()
+            .createComponentPopupBuilder(panel, null)
             .setTitle("Code Suggestions")
             .setResizable(true)
             .setMovable(true)
             .createPopup()
-
-        popup.showInBestPositionFor(editor)
     }
+
+
+
 
     private fun applySuggestion(editor: Editor, suggestion: String) {
         val project = editor.project
         if (project != null) {
             WriteCommandAction.runWriteCommandAction(project) {
                 val caretOffset = editor.caretModel.offset
-                val documentText = editor.document.text
+                val document = editor.document
+                val currentLineStartOffset = document.getLineStartOffset(document.getLineNumber(caretOffset))
+                val currentLineContent = document.getText(com.intellij.openapi.util.TextRange(currentLineStartOffset, caretOffset)).trim()
 
-                val sanitizedSuggestion = sanitizeSuggestion(documentText, caretOffset, suggestion)
+                // 清理重复的代码内容
+                val sanitizedSuggestion = sanitizeSuggestion(currentLineContent, suggestion)
+
                 if (sanitizedSuggestion.isNotBlank()) {
-                    editor.document.insertString(caretOffset, sanitizedSuggestion)
-                    println("Applied suggestion: $sanitizedSuggestion")
+                    document.insertString(caretOffset, sanitizedSuggestion)
+                    println("Applied sanitized suggestion: $sanitizedSuggestion")
                 } else {
-                    println("Suggestion was fully redundant and not applied.")
+                    println("Sanitized suggestion was empty or redundant, not applied.")
                 }
+                popup?.cancel()
             }
         } else {
             println("Project is null, cannot apply suggestion.")
         }
     }
 
-    private fun sanitizeSuggestion(currentCode: String, caretOffset: Int, suggestion: String): String {
-        val currentCodeUpToCaret = currentCode.substring(0, caretOffset)
-        val currentLines = currentCodeUpToCaret.lines().map { it.trim() }
-
-        val suggestionLines = suggestion.lines().map { it.trim() }
-
-        val filteredLines = suggestionLines.dropWhile { it in currentLines }
-
-        return filteredLines.joinToString("\n")
-    }
-
-    private fun callLLMForSuggestions(contextCode: String): List<String> {
-        println("callLLMForSuggestions() with contextCode:\n$contextCode")
-        val response = httpPost("http://172.31.233.216:8080/v1/chat/completions", contextCode)
-        println("Response from LLM: $response")
-        return parseLLMResponse(response)
-    }
-
-    @Serializable
-    data class LLMResponse(
-        val choices: List<Choice>
-    ) {
-        @Serializable
-        data class Choice(
-            val message: Message
-        ) {
-            @Serializable
-            data class Message(
-                val content: String
-            )
+    // 清理重复代码内容的辅助函数
+    private fun sanitizeSuggestion(currentLine: String, suggestion: String): String {
+        val suggestionLines = suggestion.lines()
+        val sanitizedLines = if (currentLine.isNotBlank() && suggestionLines.firstOrNull()?.startsWith(currentLine) == true) {
+            // 如果补全内容的第一行包含当前行代码，则剔除重复的部分
+            suggestionLines.drop(1)
+        } else {
+            suggestionLines
         }
+        return sanitizedLines.joinToString("\n").trim()
     }
 
-    private fun parseLLMResponse(jsonString: String): List<String> {
+
+
+    private fun callLLMForSuggestions(messages: List<Message>): List<String> {
         return try {
-            val llmResponse = Json { ignoreUnknownKeys = true }.decodeFromString<LLMResponse>(jsonString)
-            llmResponse.choices.mapNotNull { it.message.content.trim() }
+            val response = AIService.getAnswerResponse(messages)
+
+            // 提取代码块
+            val codeBlocks = extractCodeBlocks(response)
+
+            if (codeBlocks.isEmpty()) {
+                println("No code blocks found.")
+            }
+            codeBlocks
         } catch (e: Exception) {
-            println("parseLLMResponse failed: ${e.message}")
+            println("Error while calling AIService: ${e.message}")
             emptyList()
         }
     }
 
-    private fun httpPost(url: String, prompt: String): String {
-        val client = OkHttpClient()
-        val mediaType = "application/json; charset=utf-8".toMediaType()
-        val jsonObj = buildJsonRequestBody(prompt)
-        val requestBody = jsonObj.toRequestBody(mediaType)
-
-        val apiKey = System.getenv("DASHSCOPE_API_KEY") ?: "sk-a212e3f3d4ed49ab9ad576692dde557f"
-
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody)
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            println("HTTP response code: ${response.code}")
-            val responseBody = response.body?.string() ?: "{}"
-            println("Raw LLM response: $responseBody")
-            return responseBody
-        }
+    // 提取代码块的辅助函数
+    private fun extractCodeBlocks(response: String): List<String> {
+        val regex = Regex("```[a-zA-Z]*\\n(.*?)```", RegexOption.DOT_MATCHES_ALL)
+        return regex.findAll(response)
+            .mapNotNull { matchResult ->
+                matchResult.groups[1]?.value?.trim() // 提取代码块内容
+            }
+            .toList()
     }
 
-    private fun buildJsonRequestBody(prompt: String): String {
-        val sanitizedPrompt = prompt.replace("\n", " ").replace("<cursor>", "").trim()
-        return """
-        {
-            "model": "qwen-plus",
-            "messages": [
-                {"role": "system", "content": "You are an advanced assistant specializing in Java code completion. Respond only with the missing or suggested code snippet without any additional explanation."},
-                {"role": "user", "content": "Based on the following context, suggest relevant Java code completions: \"$sanitizedPrompt\""}
-            ]
-        }
-        """.trimIndent()
-    }
+
 }
